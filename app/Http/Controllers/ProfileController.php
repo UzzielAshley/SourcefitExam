@@ -107,7 +107,7 @@ class ProfileController extends Controller
     {
         $profile->delete();
   
-        return redirect()->route('profile.index')
+        return redirect()->route('profiles.index')
                         ->with('success','Profile deleted successfully');
     }
 }
