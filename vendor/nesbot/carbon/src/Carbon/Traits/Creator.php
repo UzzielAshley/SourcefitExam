@@ -13,12 +13,10 @@ namespace Carbon\Traits;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Carbon\CarbonTimeZone;
 use Carbon\Exceptions\InvalidDateException;
 use Carbon\Translator;
-use Closure;
 use DateTimeInterface;
-use DateTimeZone;
-use Exception;
 use InvalidArgumentException;
 
 /**
@@ -32,8 +30,6 @@ use InvalidArgumentException;
  */
 trait Creator
 {
-    use ObjectInitialisation;
-
     /**
      * The errors that can occur.
      *
@@ -47,23 +43,20 @@ trait Creator
      * Please see the testing aids section (specifically static::setTestNow())
      * for more on the possibility of this constructor returning a test instance.
      *
-     * @param string|null              $time
-     * @param DateTimeZone|string|null $tz
+     * @param string|null               $time
+     * @param \DateTimeZone|string|null $tz
      */
     public function __construct($time = null, $tz = null)
     {
-        if ($time instanceof DateTimeInterface) {
-            $time = $this->constructTimezoneFromDateTime($time, $tz)->format('Y-m-d H:i:s.u');
-        }
-
         if (is_int($time)) {
             $time = "@$time";
         }
 
+        $originalTz = $tz;
+
         // If the class has a test now set and we are trying to create a now()
         // instance then override as required
         $isNow = empty($time) || $time === 'now';
-
         if (method_exists(static::class, 'hasTestNow') &&
             method_exists(static::class, 'getTestNow') &&
             static::hasTestNow() &&
@@ -72,62 +65,27 @@ trait Creator
             static::mockConstructorParameters($time, $tz);
         }
 
+        /** @var CarbonTimeZone $timezone */
+        $timezone = $this->autoDetectTimeZone($tz, $originalTz);
+
         // Work-around for PHP bug https://bugs.php.net/bug.php?id=67127
         if (strpos((string) .1, '.') === false) {
             $locale = setlocale(LC_NUMERIC, '0');
             setlocale(LC_NUMERIC, 'C');
         }
-
-        parent::__construct($time ?: 'now', static::safeCreateDateTimeZone($tz) ?: null);
-
-        $this->constructedObjectId = spl_object_hash($this);
-
+        parent::__construct($time, $timezone);
         if (isset($locale)) {
             setlocale(LC_NUMERIC, $locale);
         }
-
         static::setLastErrors(parent::getLastErrors());
-    }
-
-    /**
-     * Get timezone from a datetime instance.
-     *
-     * @param DateTimeInterface        $date
-     * @param DateTimeZone|string|null $tz
-     *
-     * @return DateTimeInterface
-     */
-    private function constructTimezoneFromDateTime(DateTimeInterface $date, &$tz)
-    {
-        if ($tz !== null) {
-            $safeTz = static::safeCreateDateTimeZone($tz);
-
-            if ($safeTz) {
-                return $date->setTimezone($safeTz);
-            }
-
-            return $date;
-        }
-
-        $tz = $date->getTimezone();
-
-        return $date;
-    }
-
-    /**
-     * Update constructedObjectId on cloned.
-     */
-    public function __clone()
-    {
-        $this->constructedObjectId = spl_object_hash($this);
     }
 
     /**
      * Create a Carbon instance from a DateTime one.
      *
-     * @param DateTimeInterface $date
+     * @param \DateTimeInterface $date
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function instance($date)
     {
@@ -140,13 +98,7 @@ trait Creator
         $instance = new static($date->format('Y-m-d H:i:s.u'), $date->getTimezone());
 
         if ($date instanceof CarbonInterface || $date instanceof Options) {
-            $settings = $date->getSettings();
-
-            if (!$date->hasLocalTranslator()) {
-                unset($settings['locale']);
-            }
-
-            $instance->settings($settings);
+            $instance->settings($date->getSettings());
         }
 
         return $instance;
@@ -159,10 +111,10 @@ trait Creator
      * as it allows you to do Carbon::parse('Monday next week')->fn() rather
      * than (new Carbon('Monday next week'))->fn().
      *
-     * @param string|null              $time
-     * @param DateTimeZone|string|null $tz
+     * @param string|null               $time
+     * @param \DateTimeZone|string|null $tz
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function rawParse($time = null, $tz = null)
     {
@@ -170,15 +122,7 @@ trait Creator
             return static::instance($time);
         }
 
-        try {
-            return new static($time, $tz);
-        } catch (Exception $exception) {
-            try {
-                return static::now($tz)->change($time);
-            } catch (Exception $ignored) {
-                throw $exception;
-            }
-        }
+        return new static($time, $tz);
     }
 
     /**
@@ -188,10 +132,10 @@ trait Creator
      * as it allows you to do Carbon::parse('Monday next week')->fn() rather
      * than (new Carbon('Monday next week'))->fn().
      *
-     * @param string|null              $time
-     * @param DateTimeZone|string|null $tz
+     * @param string|null               $time
+     * @param \DateTimeZone|string|null $tz
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function parse($time = null, $tz = null)
     {
@@ -211,11 +155,11 @@ trait Creator
     /**
      * Create a carbon instance from a localized string (in French, Japanese, Arabic, etc.).
      *
-     * @param string                   $time
-     * @param string                   $locale
-     * @param DateTimeZone|string|null $tz
+     * @param string                    $time
+     * @param string                    $locale
+     * @param \DateTimeZone|string|null $tz
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function parseFromLocale($time, $locale, $tz = null)
     {
@@ -225,9 +169,9 @@ trait Creator
     /**
      * Get a Carbon instance for the current date and time.
      *
-     * @param DateTimeZone|string|null $tz
+     * @param \DateTimeZone|string|null $tz
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function now($tz = null)
     {
@@ -237,9 +181,9 @@ trait Creator
     /**
      * Create a Carbon instance for today.
      *
-     * @param DateTimeZone|string|null $tz
+     * @param \DateTimeZone|string|null $tz
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function today($tz = null)
     {
@@ -249,9 +193,9 @@ trait Creator
     /**
      * Create a Carbon instance for tomorrow.
      *
-     * @param DateTimeZone|string|null $tz
+     * @param \DateTimeZone|string|null $tz
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function tomorrow($tz = null)
     {
@@ -261,9 +205,9 @@ trait Creator
     /**
      * Create a Carbon instance for yesterday.
      *
-     * @param DateTimeZone|string|null $tz
+     * @param \DateTimeZone|string|null $tz
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function yesterday($tz = null)
     {
@@ -273,7 +217,7 @@ trait Creator
     /**
      * Create a Carbon instance for the greatest supported date.
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function maxValue()
     {
@@ -289,7 +233,7 @@ trait Creator
     /**
      * Create a Carbon instance for the lowest supported date.
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function minValue()
     {
@@ -300,28 +244,6 @@ trait Creator
 
         // 64 bit
         return static::create(1, 1, 1, 0, 0, 0);
-    }
-
-    private static function assertBetween($unit, $value, $min, $max)
-    {
-        if (static::isStrictModeEnabled() && ($value < $min || $value > $max)) {
-            throw new InvalidArgumentException("$unit must be between $min and $max, $value given");
-        }
-    }
-
-    private static function createNowInstance($tz)
-    {
-        if (!static::hasTestNow()) {
-            return static::now($tz);
-        }
-
-        $now = static::getTestNow();
-
-        if ($now instanceof Closure) {
-            return $now(static::now($tz));
-        }
-
-        return $now;
     }
 
     /**
@@ -336,28 +258,28 @@ trait Creator
      * If $hour is not null then the default values for $minute and $second
      * will be 0.
      *
-     * @param int|null                 $year
-     * @param int|null                 $month
-     * @param int|null                 $day
-     * @param int|null                 $hour
-     * @param int|null                 $minute
-     * @param int|null                 $second
-     * @param DateTimeZone|string|null $tz
+     * @param int|null                  $year
+     * @param int|null                  $month
+     * @param int|null                  $day
+     * @param int|null                  $hour
+     * @param int|null                  $minute
+     * @param int|null                  $second
+     * @param \DateTimeZone|string|null $tz
      *
      * @throws \InvalidArgumentException
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function create($year = 0, $month = 1, $day = 1, $hour = 0, $minute = 0, $second = 0, $tz = null)
     {
         if (is_string($year) && !is_numeric($year)) {
-            return static::parse($year, $tz ?: (is_string($month) || $month instanceof DateTimeZone ? $month : null));
+            return static::parse($year, $tz);
         }
 
         $defaults = null;
         $getDefault = function ($unit) use ($tz, &$defaults) {
             if ($defaults === null) {
-                $now = self::createNowInstance($tz);
+                $now = static::hasTestNow() ? static::getTestNow() : static::now($tz);
 
                 $defaults = array_combine([
                     'year',
@@ -377,13 +299,7 @@ trait Creator
         $day = $day === null ? $getDefault('day') : $day;
         $hour = $hour === null ? $getDefault('hour') : $hour;
         $minute = $minute === null ? $getDefault('minute') : $minute;
-        $second = (float) ($second === null ? $getDefault('second') : $second);
-
-        self::assertBetween('month', $month, 0, 99);
-        self::assertBetween('day', $day, 0, 99);
-        self::assertBetween('hour', $hour, 0, 99);
-        self::assertBetween('minute', $minute, 0, 99);
-        self::assertBetween('second', $second, 0, 99);
+        $second = $second === null ? $getDefault('second') : $second;
 
         $fixYear = null;
 
@@ -421,17 +337,17 @@ trait Creator
      * If one of the set values is not valid, an \InvalidArgumentException
      * will be thrown.
      *
-     * @param int|null                 $year
-     * @param int|null                 $month
-     * @param int|null                 $day
-     * @param int|null                 $hour
-     * @param int|null                 $minute
-     * @param int|null                 $second
-     * @param DateTimeZone|string|null $tz
+     * @param int|null                  $year
+     * @param int|null                  $month
+     * @param int|null                  $day
+     * @param int|null                  $hour
+     * @param int|null                  $minute
+     * @param int|null                  $second
+     * @param \DateTimeZone|string|null $tz
      *
      * @throws \Carbon\Exceptions\InvalidDateException|\InvalidArgumentException
      *
-     * @return static|false
+     * @return static|CarbonInterface|false
      */
     public static function createSafe($year = null, $month = null, $day = null, $hour = null, $minute = null, $second = null, $tz = null)
     {
@@ -465,14 +381,14 @@ trait Creator
     /**
      * Create a Carbon instance from just a date. The time portion is set to now.
      *
-     * @param int|null                 $year
-     * @param int|null                 $month
-     * @param int|null                 $day
-     * @param DateTimeZone|string|null $tz
+     * @param int|null                  $year
+     * @param int|null                  $month
+     * @param int|null                  $day
+     * @param \DateTimeZone|string|null $tz
      *
      * @throws \InvalidArgumentException
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function createFromDate($year = null, $month = null, $day = null, $tz = null)
     {
@@ -482,12 +398,12 @@ trait Creator
     /**
      * Create a Carbon instance from just a date. The time portion is set to midnight.
      *
-     * @param int|null                 $year
-     * @param int|null                 $month
-     * @param int|null                 $day
-     * @param DateTimeZone|string|null $tz
+     * @param int|null                  $year
+     * @param int|null                  $month
+     * @param int|null                  $day
+     * @param \DateTimeZone|string|null $tz
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function createMidnightDate($year = null, $month = null, $day = null, $tz = null)
     {
@@ -497,14 +413,14 @@ trait Creator
     /**
      * Create a Carbon instance from just a time. The date portion is set to today.
      *
-     * @param int|null                 $hour
-     * @param int|null                 $minute
-     * @param int|null                 $second
-     * @param DateTimeZone|string|null $tz
+     * @param int|null                  $hour
+     * @param int|null                  $minute
+     * @param int|null                  $second
+     * @param \DateTimeZone|string|null $tz
      *
      * @throws \InvalidArgumentException
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function createFromTime($hour = 0, $minute = 0, $second = 0, $tz = null)
     {
@@ -514,12 +430,12 @@ trait Creator
     /**
      * Create a Carbon instance from a time string. The date portion is set to today.
      *
-     * @param string                   $time
-     * @param DateTimeZone|string|null $tz
+     * @param string                    $time
+     * @param \DateTimeZone|string|null $tz
      *
      * @throws \InvalidArgumentException
      *
-     * @return static
+     * @return static|CarbonInterface
      */
     public static function createFromTimeString($time, $tz = null)
     {
@@ -527,9 +443,9 @@ trait Creator
     }
 
     /**
-     * @param string                         $format     Datetime format
-     * @param string                         $time
-     * @param DateTimeZone|string|false|null $originalTz
+     * @param string                          $format     Datetime format
+     * @param string                          $time
+     * @param \DateTimeZone|string|false|null $originalTz
      *
      * @return \DateTimeInterface|false
      */
@@ -543,11 +459,11 @@ trait Creator
         // @codeCoverageIgnoreEnd
 
         if ($originalTz === null) {
-            return parent::createFromFormat($format, "$time");
+            return parent::createFromFormat($format, $time);
         }
 
         $tz = is_int($originalTz)
-            ? @timezone_name_from_abbr('', (int) ($originalTz * 3600), 1)
+            ? @timezone_name_from_abbr(null, floatval($originalTz * 3600), 1)
             : $originalTz;
 
         $tz = static::safeCreateDateTimeZone($tz, $originalTz);
@@ -556,19 +472,19 @@ trait Creator
             return false;
         }
 
-        return parent::createFromFormat($format, "$time", $tz);
+        return parent::createFromFormat($format, $time, $tz);
     }
 
     /**
      * Create a Carbon instance from a specific format.
      *
-     * @param string                         $format Datetime format
-     * @param string                         $time
-     * @param DateTimeZone|string|false|null $tz
+     * @param string                          $format Datetime format
+     * @param string                          $time
+     * @param \DateTimeZone|string|false|null $tz
      *
      * @throws InvalidArgumentException
      *
-     * @return static|false
+     * @return static|CarbonInterface|false
      */
     public static function rawCreateFromFormat($format, $time, $tz = null)
     {
@@ -584,10 +500,8 @@ trait Creator
         // First attempt to create an instance, so that error messages are based on the unmodified format.
         $date = self::createFromFormatAndTimezone($format, $time, $tz);
         $lastErrors = parent::getLastErrors();
-        /** @var \Carbon\CarbonImmutable|\Carbon\Carbon|null $mock */
-        $mock = static::getMockedTestNow($tz);
 
-        if ($mock && $date instanceof DateTimeInterface) {
+        if (($mock = static::getTestNow()) && $date instanceof DateTimeInterface) {
             // Set timezone from mock if custom timezone was neither given directly nor as a part of format.
             // First let's skip the part that will be ignored by the parser.
             $nonEscaped = '(?<!\\\\)(\\\\{2})*';
@@ -595,7 +509,7 @@ trait Creator
             $nonIgnored = preg_replace("/^.*{$nonEscaped}!/s", '', $format);
 
             if ($tz === null && !preg_match("/{$nonEscaped}[eOPT]/", $nonIgnored)) {
-                $tz = clone $mock->getTimezone();
+                $tz = $mock->getTimezone();
             }
 
             // Set microseconds to zero to match behavior of DateTime::createFromFormat()
@@ -629,13 +543,13 @@ trait Creator
     /**
      * Create a Carbon instance from a specific format.
      *
-     * @param string                         $format Datetime format
-     * @param string                         $time
-     * @param DateTimeZone|string|false|null $tz
+     * @param string                          $format Datetime format
+     * @param string                          $time
+     * @param \DateTimeZone|string|false|null $tz
      *
      * @throws InvalidArgumentException
      *
-     * @return static|false
+     * @return static|CarbonInterface|false
      */
     public static function createFromFormat($format, $time, $tz = null)
     {
@@ -657,13 +571,13 @@ trait Creator
      *
      * @param string                                             $format     Datetime format
      * @param string                                             $time
-     * @param DateTimeZone|string|false|null                     $tz         optional timezone
+     * @param \DateTimeZone|string|false|null                    $tz         optional timezone
      * @param string|null                                        $locale     locale to be used for LTS, LT, LL, LLL, etc. macro-formats (en by fault, unneeded if no such macro-format in use)
      * @param \Symfony\Component\Translation\TranslatorInterface $translator optional custom translator to use for macro-formats
      *
      * @throws InvalidArgumentException
      *
-     * @return static|false
+     * @return static|CarbonInterface|false
      */
     public static function createFromIsoFormat($format, $time, $tz = null, $locale = 'en', $translator = null)
     {
@@ -797,14 +711,14 @@ trait Creator
     /**
      * Create a Carbon instance from a specific format and a string in a given language.
      *
-     * @param string                         $format Datetime format
-     * @param string                         $locale
-     * @param string                         $time
-     * @param DateTimeZone|string|false|null $tz
+     * @param string                          $format Datetime format
+     * @param string                          $locale
+     * @param string                          $time
+     * @param \DateTimeZone|string|false|null $tz
      *
      * @throws InvalidArgumentException
      *
-     * @return static|false
+     * @return static|CarbonInterface|false
      */
     public static function createFromLocaleFormat($format, $locale, $time, $tz = null)
     {
@@ -814,14 +728,14 @@ trait Creator
     /**
      * Create a Carbon instance from a specific ISO format and a string in a given language.
      *
-     * @param string                         $format Datetime ISO format
-     * @param string                         $locale
-     * @param string                         $time
-     * @param DateTimeZone|string|false|null $tz
+     * @param string                          $format Datetime ISO format
+     * @param string                          $locale
+     * @param string                          $time
+     * @param \DateTimeZone|string|false|null $tz
      *
      * @throws InvalidArgumentException
      *
-     * @return static|false
+     * @return static|CarbonInterface|false
      */
     public static function createFromLocaleIsoFormat($format, $locale, $time, $tz = null)
     {
@@ -838,7 +752,7 @@ trait Creator
      *
      * @param mixed $var
      *
-     * @return static|null
+     * @return static|CarbonInterface|null
      */
     public static function make($var)
     {
@@ -850,12 +764,9 @@ trait Creator
 
         if (is_string($var)) {
             $var = trim($var);
+            $first = substr($var, 0, 1);
 
-            if (is_string($var) &&
-                !preg_match('/^P[0-9T]/', $var) &&
-                !preg_match('/^R[0-9]/', $var) &&
-                preg_match('/[a-z0-9]/i', $var)
-            ) {
+            if (is_string($var) && $first !== 'P' && $first !== 'R' && preg_match('/[a-z0-9]/i', $var)) {
                 $date = static::parse($var);
             }
         }

@@ -2,11 +2,10 @@
 
 namespace Illuminate\Foundation\Events;
 
-use Illuminate\Support\Str;
-use ReflectionClass;
-use ReflectionException;
-use ReflectionMethod;
 use SplFileInfo;
+use ReflectionClass;
+use ReflectionMethod;
+use Illuminate\Support\Str;
 use Symfony\Component\Finder\Finder;
 
 class DiscoverEvents
@@ -39,17 +38,9 @@ class DiscoverEvents
         $listenerEvents = [];
 
         foreach ($listeners as $listener) {
-            try {
-                $listener = new ReflectionClass(
-                    static::classFromFile($listener, $basePath)
-                );
-            } catch (ReflectionException $e) {
-                continue;
-            }
-
-            if (! $listener->isInstantiable()) {
-                continue;
-            }
+            $listener = new ReflectionClass(
+                static::classFromFile($listener, $basePath)
+            );
 
             foreach ($listener->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
                 if (! Str::is('handle*', $method->name) ||
@@ -77,7 +68,7 @@ class DiscoverEvents
         $class = trim(Str::replaceFirst($basePath, '', $file->getRealPath()), DIRECTORY_SEPARATOR);
 
         return str_replace(
-            [DIRECTORY_SEPARATOR, ucfirst(basename(app()->path())).'\\'],
+            [DIRECTORY_SEPARATOR, 'App\\'],
             ['\\', app()->getNamespace()],
             ucfirst(Str::replaceLast('.php', '', $class))
         );

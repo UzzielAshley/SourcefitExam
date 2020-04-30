@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -17,3 +16,10 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('auth:api')->get('/user', function (Request $request) {
     return $request->user();
 });
+Route::post('/profile/create', 'ProfileController@store');
+Route::get('/profile/edit/{id}', 'ProfileController@edit');
+Route::get('/show/{id}', 'ProfileController@show');
+Route::post('/profile/update/{id}', 'ProfileController@update');
+Route::delete('/profile/delete/{id}', 'ProfileController@delete');
+Route::get('/profiles', 'ProfileController@index');
+

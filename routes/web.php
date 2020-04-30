@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-
 /*
 |--------------------------------------------------------------------------
 | Web Routes
@@ -13,7 +11,6 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::get('/', function () {
-    return redirect()->route('profiles.index');
-});
-Route::resource('profiles','ProfileController');
+Route::get('/{any}', function () {
+  return view('index');
+})->where('any', '.*');
