@@ -2117,21 +2117,25 @@ __webpack_require__.r(__webpack_exports__);
 //
 //
 /* harmony default export */ __webpack_exports__["default"] = ({
+  mounted: function mounted() {
+    this.load();
+  },
   data: function data() {
     return {
       profile: [],
       profiles: []
     };
   },
-  created: function created() {
-    var _this = this;
-
-    var uri = '/api/profiles';
-    axios.get(uri).then(function (response) {
-      _this.profiles = response.data.data;
-    });
-  },
+  created: function created() {},
   methods: {
+    load: function load() {
+      var _this = this;
+
+      var uri = '/api/profiles';
+      axios.get(uri).then(function (response) {
+        _this.profiles = response.data.data;
+      });
+    },
     deletePost: function deletePost(id) {
       var _this2 = this;
 
@@ -2148,6 +2152,8 @@ __webpack_require__.r(__webpack_exports__);
             _this2.profile.splice(_this2.profile.indexOf(id), 1);
           });
           swal('Successfuly!', 'Profile has been added!', 'success');
+
+          _this2.load();
         }
       });
     },

@@ -96,6 +96,9 @@
 
 <script>
   export default {
+     mounted() {
+      this.load()
+    },
       data() {
         return {
           profile:[],
@@ -103,12 +106,15 @@
         }
       },
       created() {
-      let uri = '/api/profiles';
-      axios.get(uri).then(response => {
-        this.profiles = response.data.data;
-      });
+      
     },
     methods: {
+      load(){
+        let uri = '/api/profiles';
+        axios.get(uri).then(response => {
+          this.profiles = response.data.data;
+        });
+      },
       deletePost(id) {
         swal({
           title:"Are you sure?",
@@ -123,6 +129,8 @@
                 this.profile.splice(this.profile.indexOf(id), 1);
               });
               swal('Successfuly!', 'Profile has been added!', 'success');
+              this.load();
+
             }
         })
 
